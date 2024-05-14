@@ -8,7 +8,7 @@ import time
 import json
 from multiprocessing import Value
 import toml
-
+from tabulate import tabulate
 from tqdm import tqdm
 
 import torch
@@ -366,9 +366,6 @@ class NetworkTrainer:
             args.max_train_steps = args.max_train_epochs * math.ceil(
                 len(train_dataloader) / accelerator.num_processes / args.gradient_accumulation_steps
             )
-            accelerator.print(
-                f"override steps. steps for {args.max_train_epochs} epochs is / 指定エポックまでのステップ数: {args.max_train_steps}"
-            )
 
         # データセット側にも学習ステップを送信
         train_dataset_group.set_max_train_steps(args.max_train_steps)
@@ -512,17 +509,16 @@ class NetworkTrainer:
         # TODO: find a way to handle total batch size when there are multiple datasets
         total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
 
-        accelerator.print("running training / 学習開始")
-        accelerator.print(f"  num train images * repeats / 学習画像の数×繰り返し回数: {train_dataset_group.num_train_images}")
-        accelerator.print(f"  num reg images / 正則化画像の数: {train_dataset_group.num_reg_images}")
-        accelerator.print(f"  num batches per epoch / 1epochのバッチ数: {len(train_dataloader)}")
-        accelerator.print(f"  num epochs / epoch数: {num_train_epochs}")
-        accelerator.print(
-            f"  batch size per device / バッチサイズ: {', '.join([str(d.batch_size) for d in train_dataset_group.datasets])}"
-        )
-        # accelerator.print(f"  total train batch size (with parallel & distributed & accumulation) / 総バッチサイズ（並列学習、勾配合計含む）: {total_batch_size}")
-        accelerator.print(f"  gradient accumulation steps / 勾配を合計するステップ数 = {args.gradient_accumulation_steps}")
-        accelerator.print(f"  total optimization steps / 学習ステップ数: {args.max_train_steps}")
+        logger.info("** 小唐版 LoRA-Script 开始训练 **")
+        headers= ["训练集参数", "值"]
+        table = [["训练集图片数量(包括重复) / num_train_images", train_dataset_group.num_train_images],
+                 ["正则化图片数量 / num_reg_images", train_dataset_group.num_reg_images],
+                 ["每个训练轮次有多少批次 / len(train_dataloader)", len(train_dataloader)],
+                 ["训练总轮次 / num_train_epochs", num_train_epochs],
+                 ["梯度累加步数 / gradient_accumulation_steps", args.gradient_accumulation_steps],
+                 ["总学习步数（梯度更新次数）/ max_train_steps", args.max_train_steps],
+                 ]
+        accelerator.print(tabulate(table, headers, tablefmt="grid"))
 
         # TODO refactor metadata creation and move to util
         metadata = {
@@ -1105,6 +1101,8 @@ def setup_parser() -> argparse.ArgumentParser:
         help="do not use fp16/bf16 VAE in mixed precision (use float VAE) / mixed precisionでも fp16/bf16 VAEを使わずfloat VAEを使う",
     )
     return parser
+
+
 
 
 if __name__ == "__main__":

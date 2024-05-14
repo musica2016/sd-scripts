@@ -29,7 +29,7 @@ import hashlib
 import subprocess
 from io import BytesIO
 import toml
-
+from tabulate import tabulate
 from tqdm import tqdm
 
 import torch
@@ -757,7 +757,7 @@ class BaseDataset(torch.utils.data.Dataset):
                     tokens_len = (
                             math.floor(
                                 (self.current_step) * (
-                                            (len(flex_tokens) - subset.token_warmup_min) / (subset.token_warmup_step))
+                                        (len(flex_tokens) - subset.token_warmup_min) / (subset.token_warmup_step))
                             )
                             + subset.token_warmup_min
                     )
@@ -1257,7 +1257,7 @@ class BaseDataset(torch.utils.data.Dataset):
             latents_list.append(latents)
 
             target_size = (image.shape[2], image.shape[1]) if image is not None else (
-            latents.shape[2] * 8, latents.shape[1] * 8)
+                latents.shape[2] * 8, latents.shape[1] * 8)
 
             if not flipped:
                 crop_left_top = (crop_ltrb[0], crop_ltrb[1])
@@ -5177,8 +5177,8 @@ def sample_images_common(
             if steps % args.sample_every_n_steps != 0 or epoch is not None:  # steps is not divisible or end of epoch
                 return
 
-    logger.info("")
-    logger.info(f"generating sample images at step / サンプル画像生成 ステップ: {steps}")
+    logger.info("** 预览图信息 **")
+
     if not os.path.isfile(args.sample_prompts):
         logger.error(f"No prompt file / プロンプトファイルがありません: {args.sample_prompts}")
         return
@@ -5333,15 +5333,27 @@ def sample_image_inference(
 
     height = max(64, height - height % 8)  # round to divisible by 8
     width = max(64, width - width % 8)  # round to divisible by 8
-    logger.info(f"prompt: {prompt}")
-    logger.info(f"negative_prompt: {negative_prompt}")
-    logger.info(f"height: {height}")
-    logger.info(f"width: {width}")
-    logger.info(f"sample_steps: {sample_steps}")
-    logger.info(f"scale: {scale}")
-    logger.info(f"sample_sampler: {sampler_name}")
-    if seed is not None:
-        logger.info(f"seed: {seed}")
+
+    # if seed is not None:
+    #     logger.info(f"种子: {seed}")
+    #
+    # logger.info(f"提示词: {prompt}")
+    # logger.info(f"负向提示词: {negative_prompt}")
+    # logger.info(f"高度: {height}，宽度: {width}，采样步数: {sample_steps}，相关度: {scale}，采样器: {sampler_name}")
+    headers = ["预览参数", "值"]
+    table = [
+        ["生成预览图时的训练步数 / generating sample images at step", steps],
+        ["提示词 / prompt", f"{prompt[:50]} ..."],
+        ["负向提示词 / negative_prompt", f"{negative_prompt[:50]} ..."],
+        ["预览图高度 / height", height],
+        ["预览图宽度 / width", width],
+        ["采样步数 / sample_steps", sample_steps],
+        ["提示词相关度 / scale", scale],
+        ["采样器 / sample_sampler", sampler_name],
+        ["预览图种子 / seed", seed],
+    ]
+    accelerator.print(tabulate(table, headers, tablefmt="grid"))
+
     with accelerator.autocast():
         latents = pipeline(
             prompt=prompt,
@@ -5391,13 +5403,14 @@ def sample_image_inference(
 def cost_time(func):
     def fun(*args, **kwargs):
         s_t = time.time()
-        logger.info(f"{'='*70}\n+ 小唐版 LoRA-Script 训练开始时间: {time.ctime()} \n{'='*70}")
+        logger.info(f"{'=' * 70}\n+ 小唐版 LoRA-Script 训练开始时间: {time.ctime()} +\n{'=' * 70}")
         result = func(*args, **kwargs)
         d_t = time.time()
-        logger.info(f"{'='*70}\n+ 小唐版 LoRA-Script 训练结束时间: {time.ctime()} \n")
+        logger.info(f"{'=' * 70}\n+ 小唐版 LoRA-Script 训练结束时间: {time.ctime()} +")
         m, s = divmod(int(d_t - s_t), 60)
         h, m = divmod(m, 60)
-        logger.info(f"{'='*70}\n+ 小唐版 LoRA-Script 训练总共耗时: {d_t - s_t} 秒 (即：{h}时{m}分{s}秒) \n{'='*70}")
+        logger.info(
+            f"{'=' * 70}\n+ 小唐版 LoRA-Script 训练总共耗时: {round((d_t - s_t), 2)} 秒 ({h}时{m}分{s}秒) +\n{'=' * 70}")
         return result
 
     return fun
