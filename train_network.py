@@ -1,5 +1,7 @@
 import importlib
 import argparse
+import pprint
+
 import math
 import os
 import sys
@@ -10,7 +12,7 @@ from multiprocessing import Value
 import toml
 from tabulate import tabulate
 from tqdm import tqdm
-
+from colorama import init, Fore, Back, Style
 import torch
 from library.device_utils import init_ipex, clean_memory_on_device
 
@@ -53,7 +55,8 @@ class NetworkTrainer:
 
     # TODO 他のスクリプトと共通化する
     def generate_step_logs(
-        self, args: argparse.Namespace, current_loss, avr_loss, lr_scheduler, keys_scaled=None, mean_norm=None, maximum_norm=None
+            self, args: argparse.Namespace, current_loss, avr_loss, lr_scheduler, keys_scaled=None, mean_norm=None,
+            maximum_norm=None
     ):
         logs = {"loss/current": current_loss, "loss/average": avr_loss}
 
@@ -74,10 +77,12 @@ class NetworkTrainer:
                 logs["lr/unet"] = float(lrs[-1])  # may be same to textencoder
 
             if (
-                args.optimizer_type.lower().startswith("DAdapt".lower()) or args.optimizer_type.lower() == "Prodigy".lower()
+                    args.optimizer_type.lower().startswith(
+                        "DAdapt".lower()) or args.optimizer_type.lower() == "Prodigy".lower()
             ):  # tracking d*lr value of unet.
                 logs["lr/d*lr"] = (
-                    lr_scheduler.optimizers[-1].param_groups[0]["d"] * lr_scheduler.optimizers[-1].param_groups[0]["lr"]
+                        lr_scheduler.optimizers[-1].param_groups[0]["d"] * lr_scheduler.optimizers[-1].param_groups[0][
+                    "lr"]
                 )
         else:
             idx = 0
@@ -87,9 +92,11 @@ class NetworkTrainer:
 
             for i in range(idx, len(lrs)):
                 logs[f"lr/group{i}"] = float(lrs[i])
-                if args.optimizer_type.lower().startswith("DAdapt".lower()) or args.optimizer_type.lower() == "Prodigy".lower():
+                if args.optimizer_type.lower().startswith(
+                        "DAdapt".lower()) or args.optimizer_type.lower() == "Prodigy".lower():
                     logs[f"lr/d*lr/group{i}"] = (
-                        lr_scheduler.optimizers[-1].param_groups[i]["d"] * lr_scheduler.optimizers[-1].param_groups[i]["lr"]
+                            lr_scheduler.optimizers[-1].param_groups[i]["d"] *
+                            lr_scheduler.optimizers[-1].param_groups[i]["lr"]
                     )
 
         return logs
@@ -112,14 +119,15 @@ class NetworkTrainer:
         return not args.network_train_unet_only and not self.is_text_encoder_outputs_cached(args)
 
     def cache_text_encoder_outputs_if_needed(
-        self, args, accelerator, unet, vae, tokenizers, text_encoders, data_loader, weight_dtype
+            self, args, accelerator, unet, vae, tokenizers, text_encoders, data_loader, weight_dtype
     ):
         for t_enc in text_encoders:
             t_enc.to(accelerator.device, dtype=weight_dtype)
 
     def get_text_cond(self, args, accelerator, batch, tokenizers, text_encoders, weight_dtype):
         input_ids = batch["input_ids"].to(accelerator.device)
-        encoder_hidden_states = train_util.get_hidden_states(args, input_ids, tokenizers[0], text_encoders[0], weight_dtype)
+        encoder_hidden_states = train_util.get_hidden_states(args, input_ids, tokenizers[0], text_encoders[0],
+                                                             weight_dtype)
         return encoder_hidden_states
 
     def call_unet(self, args, accelerator, unet, noisy_latents, timesteps, text_conds, batch, weight_dtype):
@@ -136,7 +144,7 @@ class NetworkTrainer:
 
     @train_util.cost_time
     def train(self, args):
-        session_id = random.randint(0, 2**32)
+        session_id = random.randint(0, 2 ** 32)
         training_started_at = time.time()
         train_util.verify_training_args(args)
         train_util.prepare_dataset_args(args, True)
@@ -148,7 +156,7 @@ class NetworkTrainer:
         use_user_config = args.dataset_config is not None
 
         if args.seed is None:
-            args.seed = random.randint(0, 2**32)
+            args.seed = random.randint(0, 2 ** 32)
         set_seed(args.seed)
 
         # tokenizerは単体またはリスト、tokenizersは必ずリスト：既存のコードとの互換性のため
@@ -260,7 +268,8 @@ class NetworkTrainer:
                 module, weights_sd = network_module.create_network_from_weights(
                     multiplier, weight_path, vae, text_encoder, unet, for_inference=True
                 )
-                module.merge_to(text_encoder, unet, weights_sd, weight_dtype, accelerator.device if args.lowram else "cpu")
+                module.merge_to(text_encoder, unet, weights_sd, weight_dtype,
+                                accelerator.device if args.lowram else "cpu")
 
             accelerator.print(f"all weights merged: {', '.join(args.base_weights)}")
 
@@ -270,7 +279,8 @@ class NetworkTrainer:
             vae.requires_grad_(False)
             vae.eval()
             with torch.no_grad():
-                train_dataset_group.cache_latents(vae, args.vae_batch_size, args.cache_latents_to_disk, accelerator.is_main_process)
+                train_dataset_group.cache_latents(vae, args.vae_batch_size, args.cache_latents_to_disk,
+                                                  accelerator.is_main_process)
             vae.to("cpu")
             clean_memory_on_device(accelerator.device)
 
@@ -291,7 +301,8 @@ class NetworkTrainer:
 
         # if a new network is added in future, add if ~ then blocks for each network (;'∀')
         if args.dim_from_weights:
-            network, _ = network_module.create_network_from_weights(1, args.network_weights, vae, text_encoder, unet, **net_kwargs)
+            network, _ = network_module.create_network_from_weights(1, args.network_weights, vae, text_encoder, unet,
+                                                                    **net_kwargs)
         else:
             if "dropout" not in net_kwargs:
                 # workaround for LyCORIS (;^ω^)
@@ -376,13 +387,13 @@ class NetworkTrainer:
         # 実験的機能：勾配も含めたfp16/bf16学習を行う　モデル全体をfp16/bf16にする
         if args.full_fp16:
             assert (
-                args.mixed_precision == "fp16"
+                    args.mixed_precision == "fp16"
             ), "full_fp16 requires mixed precision='fp16' / full_fp16を使う場合はmixed_precision='fp16'を指定してください。"
             accelerator.print("enable full fp16 training.")
             network.to(weight_dtype)
         elif args.full_bf16:
             assert (
-                args.mixed_precision == "bf16"
+                    args.mixed_precision == "bf16"
             ), "full_bf16 requires mixed precision='bf16' / full_bf16を使う場合はmixed_precision='bf16'を指定してください。"
             accelerator.print("enable full bf16 training.")
             network.to(weight_dtype)
@@ -392,7 +403,7 @@ class NetworkTrainer:
         if args.fp8_base:
             assert torch.__version__ >= "2.1.0", "fp8_base requires torch>=2.1.0 / fp8を使う場合はtorch>=2.1.0が必要です。"
             assert (
-                args.mixed_precision != "no"
+                    args.mixed_precision != "no"
             ), "fp8_base requires mixed precision='fp16' or 'bf16' / fp8を使う場合はmixed_precision='fp16'または'bf16'が必要です。"
             accelerator.print("enable fp8 training.")
             unet_weight_dtype = torch.float8_e4m3fn
@@ -407,7 +418,8 @@ class NetworkTrainer:
             if t_enc.device.type != "cpu":
                 t_enc.to(dtype=te_weight_dtype)
                 # nn.Embedding not support FP8
-                t_enc.text_model.embeddings.to(dtype=(weight_dtype if te_weight_dtype != weight_dtype else te_weight_dtype))
+                t_enc.text_model.embeddings.to(
+                    dtype=(weight_dtype if te_weight_dtype != weight_dtype else te_weight_dtype))
 
         # acceleratorがなんかよろしくやってくれるらしい / accelerator will do something good
         if args.deepspeed:
@@ -426,7 +438,8 @@ class NetworkTrainer:
             if train_unet:
                 unet = accelerator.prepare(unet)
             else:
-                unet.to(accelerator.device, dtype=unet_weight_dtype)  # move to device because unet is not prepared by accelerator
+                unet.to(accelerator.device,
+                        dtype=unet_weight_dtype)  # move to device because unet is not prepared by accelerator
             if train_text_encoder:
                 if len(text_encoders) > 1:
                     text_encoder = text_encoders = [accelerator.prepare(t_enc) for t_enc in text_encoders]
@@ -509,16 +522,38 @@ class NetworkTrainer:
         # TODO: find a way to handle total batch size when there are multiple datasets
         total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
 
-        logger.info("** 小唐版 LoRA-Script 开始训练 **")
-        headers= ["训练集参数", "值"]
-        table = [["训练集图片数量(包括重复) / num_train_images", train_dataset_group.num_train_images],
-                 ["正则化图片数量 / num_reg_images", train_dataset_group.num_reg_images],
-                 ["每个训练轮次有多少批次 / len(train_dataloader)", len(train_dataloader)],
-                 ["训练总轮次 / num_train_epochs", num_train_epochs],
-                 ["梯度累加步数 / gradient_accumulation_steps", args.gradient_accumulation_steps],
-                 ["总学习步数（梯度更新次数）/ max_train_steps", args.max_train_steps],
-                 ]
-        accelerator.print(tabulate(table, headers, tablefmt="grid"))
+        current_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+        accelerator.print(f"{current_time} {Fore.GREEN}[小唐版]： ** LoRA-Script 开始训练 **{Style.RESET_ALL}")
+        accelerator.print(Fore.GREEN + "=" * 80 + Style.RESET_ALL)
+        headers = ["*全部*训练参数(仅显示启用参数)", "值"]
+        table = []
+        _args_dict = vars(args)
+        for _each in _args_dict:
+            _value = _args_dict[_each]
+            if not _value:
+                continue
+            # if _each in ("pretrained_model_name_or_path", "sample_prompts"):
+            #     _value = os.path.basename(_value)
+            table.append([_each, _value])
+        accelerator.print(Fore.CYAN + tabulate(table, headers) + Style.RESET_ALL)
+        accelerator.print("\n")
+        headers = ["*核心*训练参数", "值"]
+        table = [
+            ["训练集图片数量(包括重复) / num_train_images", train_dataset_group.num_train_images],
+            ["批次大小 / train_batch_size", args.train_batch_size],
+            ["梯度累加步数 / gradient_accumulation_steps", args.gradient_accumulation_steps],
+            ["每轮的批次 / len(train_dataloader)", len(train_dataloader)],
+            ["训练总轮次 / num_train_epochs", num_train_epochs],
+            ["总学习步数（梯度更新次数）/ max_train_steps", args.max_train_steps],
+        ]
+        accelerator.print(Fore.CYAN + tabulate(table, headers, tablefmt="fancy_grid") + Style.RESET_ALL)
+
+        accelerator.print(
+            Fore.GREEN +
+            f"总步数的计算方法：总轮次 * 每轮的批次 / 梯度累加步数，然后向上取整。\n"
+            f"即：{num_train_epochs * math.ceil(len(train_dataloader) / args.gradient_accumulation_steps) = } 步。"
+            + Style.RESET_ALL)
+        accelerator.print("\n")
 
         # TODO refactor metadata creation and move to util
         metadata = {
@@ -538,7 +573,8 @@ class NetworkTrainer:
             "ss_lr_warmup_steps": args.lr_warmup_steps,
             "ss_lr_scheduler": args.lr_scheduler,
             "ss_network_module": args.network_module,
-            "ss_network_dim": args.network_dim,  # None means default because another network than LoRA may have another default dim
+            "ss_network_dim": args.network_dim,
+            # None means default because another network than LoRA may have another default dim
             "ss_network_alpha": args.network_alpha,  # some networks may not have alpha
             "ss_network_dropout": args.network_dropout,  # some networks may not have dropout
             "ss_mixed_precision": args.mixed_precision,
@@ -667,7 +703,7 @@ class NetworkTrainer:
         else:
             # conserving backward compatibility when using train_dataset_dir and reg_dataset_dir
             assert (
-                len(train_dataset_group.datasets) == 1
+                    len(train_dataset_group.datasets) == 1
             ), f"There should be a single dataset but {len(train_dataset_group.datasets)} found. This seems to be a bug. / データセットは1個だけ存在するはずですが、実際には{len(train_dataset_group.datasets)}個でした。プログラムのバグかもしれません。"
 
             dataset = train_dataset_group.datasets[0]
@@ -677,7 +713,8 @@ class NetworkTrainer:
             if use_dreambooth_method:
                 for subset in dataset.subsets:
                     info = reg_dataset_dirs_info if subset.is_reg else dataset_dirs_info
-                    info[os.path.basename(subset.image_dir)] = {"n_repeats": subset.num_repeats, "img_count": subset.img_count}
+                    info[os.path.basename(subset.image_dir)] = {"n_repeats": subset.num_repeats,
+                                                                "img_count": subset.img_count}
             else:
                 for subset in dataset.subsets:
                     dataset_dirs_info[os.path.basename(subset.metadata_file)] = {
@@ -735,11 +772,13 @@ class NetworkTrainer:
             if key in metadata:
                 minimum_metadata[key] = metadata[key]
 
-        progress_bar = tqdm(range(args.max_train_steps), smoothing=0, disable=not accelerator.is_local_main_process, desc="steps")
+        progress_bar = tqdm(range(args.max_train_steps), smoothing=0, disable=not accelerator.is_local_main_process,
+                            desc="steps")
         global_step = 0
 
         noise_scheduler = DDPMScheduler(
-            beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", num_train_timesteps=1000, clip_sample=False
+            beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", num_train_timesteps=1000,
+            clip_sample=False
         )
         prepare_scheduler_for_custom_training(noise_scheduler, accelerator.device)
         if args.zero_terminal_snr:
@@ -793,7 +832,7 @@ class NetworkTrainer:
 
         # training loop
         for epoch in range(num_train_epochs):
-            accelerator.print(f"\nepoch {epoch+1}/{num_train_epochs}")
+            accelerator.print(f"\nepoch {epoch + 1}/{num_train_epochs}")
             current_epoch.value = epoch + 1
 
             metadata["ss_epoch"] = str(epoch + 1)
@@ -810,7 +849,8 @@ class NetworkTrainer:
                     else:
                         with torch.no_grad():
                             # latentに変換
-                            latents = vae.encode(batch["images"].to(dtype=vae_dtype)).latent_dist.sample().to(dtype=weight_dtype)
+                            latents = vae.encode(batch["images"].to(dtype=vae_dtype)).latent_dist.sample().to(
+                                dtype=weight_dtype)
 
                             # NaNが含まれていれば警告を表示し0に置き換える
                             if torch.any(torch.isnan(latents)):
@@ -888,7 +928,8 @@ class NetworkTrainer:
                     loss = loss * loss_weights
 
                     if args.min_snr_gamma:
-                        loss = apply_snr_weight(loss, timesteps, noise_scheduler, args.min_snr_gamma, args.v_parameterization)
+                        loss = apply_snr_weight(loss, timesteps, noise_scheduler, args.min_snr_gamma,
+                                                args.v_parameterization)
                     if args.scale_v_pred_loss_like_noise_pred:
                         loss = scale_v_prediction_loss_like_noise_prediction(loss, timesteps, noise_scheduler)
                     if args.v_pred_like_loss:
@@ -910,7 +951,8 @@ class NetworkTrainer:
                     optimizer.zero_grad(set_to_none=True)
 
                 if args.scale_weight_norms:
-                    keys_scaled, mean_norm, maximum_norm = accelerator.unwrap_model(network).apply_max_norm_regularization(
+                    keys_scaled, mean_norm, maximum_norm = accelerator.unwrap_model(
+                        network).apply_max_norm_regularization(
                         args.scale_weight_norms, accelerator.device
                     )
                     max_mean_logs = {"Keys Scaled": keys_scaled, "Average key norm": mean_norm}
@@ -921,8 +963,8 @@ class NetworkTrainer:
                 if accelerator.sync_gradients:
                     progress_bar.update(1)
                     global_step += 1
-
-                    self.sample_images(accelerator, args, None, global_step, accelerator.device, vae, tokenizer, text_encoder, unet)
+                    self.sample_images(accelerator, args, None, global_step, accelerator.device, vae, tokenizer,
+                                       text_encoder, unet)
 
                     # 指定ステップごとにモデルを保存
                     if args.save_every_n_steps is not None and global_step % args.save_every_n_steps == 0:
@@ -936,7 +978,8 @@ class NetworkTrainer:
 
                             remove_step_no = train_util.get_remove_step_no(args, global_step)
                             if remove_step_no is not None:
-                                remove_ckpt_name = train_util.get_step_ckpt_name(args, "." + args.save_model_as, remove_step_no)
+                                remove_ckpt_name = train_util.get_step_ckpt_name(args, "." + args.save_model_as,
+                                                                                 remove_step_no)
                                 remove_model(remove_ckpt_name)
 
                 current_loss = loss.detach().item()
@@ -949,7 +992,8 @@ class NetworkTrainer:
                     progress_bar.set_postfix(**{**max_mean_logs, **logs})
 
                 if args.logging_dir is not None:
-                    logs = self.generate_step_logs(args, current_loss, avr_loss, lr_scheduler, keys_scaled, mean_norm, maximum_norm)
+                    logs = self.generate_step_logs(args, current_loss, avr_loss, lr_scheduler, keys_scaled, mean_norm,
+                                                   maximum_norm)
                     accelerator.log(logs, step=global_step)
 
                 if global_step >= args.max_train_steps:
@@ -970,13 +1014,15 @@ class NetworkTrainer:
 
                     remove_epoch_no = train_util.get_remove_epoch_no(args, epoch + 1)
                     if remove_epoch_no is not None:
-                        remove_ckpt_name = train_util.get_epoch_ckpt_name(args, "." + args.save_model_as, remove_epoch_no)
+                        remove_ckpt_name = train_util.get_epoch_ckpt_name(args, "." + args.save_model_as,
+                                                                          remove_epoch_no)
                         remove_model(remove_ckpt_name)
 
                     if args.save_state:
                         train_util.save_and_remove_state_on_epoch_end(args, accelerator, epoch + 1)
 
-            self.sample_images(accelerator, args, epoch + 1, global_step, accelerator.device, vae, tokenizer, text_encoder, unet)
+            self.sample_images(accelerator, args, epoch + 1, global_step, accelerator.device, vae, tokenizer,
+                               text_encoder, unet)
 
             # end of epoch
 
@@ -1023,7 +1069,8 @@ def setup_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument("--unet_lr", type=float, default=None, help="learning rate for U-Net / U-Netの学習率")
-    parser.add_argument("--text_encoder_lr", type=float, default=None, help="learning rate for Text Encoder / Text Encoderの学習率")
+    parser.add_argument("--text_encoder_lr", type=float, default=None,
+                        help="learning rate for Text Encoder / Text Encoderの学習率")
 
     parser.add_argument(
         "--network_weights", type=str, default=None, help="pretrained weights for network / 学習するネットワークの初期重み"
@@ -1101,8 +1148,6 @@ def setup_parser() -> argparse.ArgumentParser:
         help="do not use fp16/bf16 VAE in mixed precision (use float VAE) / mixed precisionでも fp16/bf16 VAEを使わずfloat VAEを使う",
     )
     return parser
-
-
 
 
 if __name__ == "__main__":

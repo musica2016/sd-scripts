@@ -31,7 +31,7 @@ from io import BytesIO
 import toml
 from tabulate import tabulate
 from tqdm import tqdm
-
+from colorama import init, Fore, Back, Style
 import torch
 from library.device_utils import init_ipex, clean_memory_on_device
 
@@ -5177,8 +5177,6 @@ def sample_images_common(
             if steps % args.sample_every_n_steps != 0 or epoch is not None:  # steps is not divisible or end of epoch
                 return
 
-    logger.info("** 预览图信息 **")
-
     if not os.path.isfile(args.sample_prompts):
         logger.error(f"No prompt file / プロンプトファイルがありません: {args.sample_prompts}")
         return
@@ -5334,15 +5332,11 @@ def sample_image_inference(
     height = max(64, height - height % 8)  # round to divisible by 8
     width = max(64, width - width % 8)  # round to divisible by 8
 
-    # if seed is not None:
-    #     logger.info(f"种子: {seed}")
-    #
-    # logger.info(f"提示词: {prompt}")
-    # logger.info(f"负向提示词: {negative_prompt}")
-    # logger.info(f"高度: {height}，宽度: {width}，采样步数: {sample_steps}，相关度: {scale}，采样器: {sampler_name}")
+    current_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+    accelerator.print(f"\n{current_time} {Fore.GREEN}[小唐版]： ** 预览图信息 **{Style.RESET_ALL}")
     headers = ["预览参数", "值"]
     table = [
-        ["生成预览图时的训练步数 / generating sample images at step", steps],
+        ["生成预览图时的训练步数 / generating sample images at step", str(steps)],
         ["提示词 / prompt", f"{prompt[:50]} ..."],
         ["负向提示词 / negative_prompt", f"{negative_prompt[:50]} ..."],
         ["预览图高度 / height", height],
@@ -5351,8 +5345,11 @@ def sample_image_inference(
         ["提示词相关度 / scale", scale],
         ["采样器 / sample_sampler", sampler_name],
         ["预览图种子 / seed", seed],
+        ["最大的显存占用 / max_memory_allocated", f"{round(torch.cuda.max_memory_allocated() / 1024 ** 3, 2)} G"],
+        ["最大的显存缓存 / max_memory_reserved", f"{round(torch.cuda.max_memory_reserved() / 1024 ** 3, 2)} G"],
+        ["显卡的最大显存 / total_memory", f"{round(torch.cuda.get_device_properties(0).total_memory / 1024 ** 3, 2)} G"]
     ]
-    accelerator.print(tabulate(table, headers, tablefmt="grid"))
+    accelerator.print(Fore.CYAN + tabulate(table, headers, tablefmt="fancy_grid") + Style.RESET_ALL)
 
     with accelerator.autocast():
         latents = pipeline(
