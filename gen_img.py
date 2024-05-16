@@ -705,7 +705,7 @@ class PipelineLike:
                     raise ValueError("The mask and init_image should be the same size!")
 
             # get the original timestep using init_timestep
-            offset = self.scheduler.config.get("steps_offset", 0)
+            offset = self.scheduler.config.get("steps_offset", 1)
             init_timestep = int(num_inference_steps * strength) + offset
             init_timestep = min(init_timestep, num_inference_steps)
 
