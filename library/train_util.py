@@ -5337,7 +5337,7 @@ def sample_image_inference(
     headers = ["预览参数", "值"]
     table = [
         ["生成预览图时的训练步数 / generating sample images at step", str(steps)],
-        ["提示词 / prompt", f"{prompt[:50]} ..."],
+        ["提示词 / prompt", f"{prompt[:50] if len(prompt) > 50 else prompt} ..."],
         ["负向提示词 / negative_prompt", f"{negative_prompt[:50]} ..."],
         ["预览图高度 / height", height],
         ["预览图宽度 / width", width],
